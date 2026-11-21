@@ -24,6 +24,9 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+# ---------------------------------------------------------
+# 1. КОНФИГУРАЦИЯ СТРАНИЦЫ И АДАПТИВНЫЙ CSS-ДИЗАЙН
+# ---------------------------------------------------------
 st.set_page_config(
     page_title="Цифровой улей | Помощник пчеловода",
     layout="wide",
@@ -33,6 +36,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Запрет горизонтальной прокрутки страницы и обрезки текста */
 .main .block-container {
     max-width: 100% !important;
     padding-top: 1.5rem !important;
@@ -42,6 +46,7 @@ st.markdown("""
     overflow-x: hidden !important;
 }
 
+/* Адаптивные карточки метрик: перенос длинных подписей и значений без троеточий */
 [data-testid="stMetric"] {
     background-color: rgba(248, 249, 250, 0.85);
     border: 1px solid rgba(0, 0, 0, 0.08);
@@ -72,6 +77,7 @@ st.markdown("""
     line-height: 1.2 !important;
 }
 
+/* Адаптивные кнопки и вкладки без сворачивания текста */
 .stButton > button {
     width: 100%;
     white-space: normal !important;
@@ -87,6 +93,7 @@ button[data-baseweb="tab"] {
     padding: 0.5rem 0.9rem !important;
 }
 
+/* Адаптивный перенос колонок на узких экранах */
 @media (max-width: 1100px) {
     [data-testid="stHorizontalBlock"] {
         flex-wrap: wrap !important;
@@ -104,6 +111,7 @@ button[data-baseweb="tab"] {
     }
 }
 
+/* Визуальное разграничение блока аналитики и чата */
 .section-header-analytics {
     background: linear-gradient(90deg, #FFF8E7 0%, #FFFFFF 100%);
     border-left: 5px solid #FF8C00;
@@ -168,6 +176,7 @@ button[data-baseweb="tab"] {
 </style>
 """, unsafe_allow_html=True)
 
+# Инициализация параметров из config.py
 TARGET_TEMP_C = config.TARGET_TEMP_C
 OVERHEAT_TEMP_C = config.OVERHEAT_TEMP_C
 CRITICAL_TEMP_C = config.CRITICAL_TEMP_C
@@ -182,8 +191,21 @@ WEEKDAYS_RU = [
     "Пятница", "Суббота", "Воскресенье"
 ]
 
+
+# ---------------------------------------------------------
+# 2. УНИВЕРСАЛЬНАЯ ЗАГРУЗКА И НОРМАЛИЗАЦИЯ ТАБЛИЦ
+#    (ПОДДЕРЖКА СХЕМЫ ПАК «ЦИФРОВОЙ УЛЕЙ 2.0» + СТАРЫХ ТАБЛИЦ)
+# ---------------------------------------------------------
 @st.cache_data
 def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
+    """
+    Универсальный парсер таблиц показаний (Excel / CSV) с полной поддержкой:
+    - схемы реального ПАК «Цифровой улей 2.0» (вес, температура, влажность, CO₂,
+      акустика 0..1400 Гц, открытие крышки, опрокидывание корпуса, заряд батареи, аудиофайл);
+    - почасовых таблиц (включая формат «Данные для агента.xlsx» с Uley-01..05);
+    - посуточных таблиц (включая формат «hive_telemetry.csv» с daily_weight_delta_kg и apiary_id);
+    - пользовательских таблиц с русскими/английскими заголовками и опциональными координатами.
+    """
     buffer = io.BytesIO(file_bytes)
     if file_name.lower().endswith((".xlsx", ".xls")):
         xls = pd.ExcelFile(buffer)
@@ -195,11 +217,13 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
         raise ValueError("Загруженная таблица не содержит строк с данными.")
 
     col_map = {
+        # Обязательные базовые колонки
         "Date_Time": "timestamp", "date": "timestamp", "Дата": "timestamp", "Дата и время": "timestamp",
         "Hive_ID": "hive_id", "Улей": "hive_id", "ID улья": "hive_id",
         "Weight_kg": "weight_kg", "Вес": "weight_kg", "Вес_кг": "weight_kg",
         "Temp_In_C": "temp_in_c", "Температура": "temp_in_c", "Температура_C": "temp_in_c",
         "Humidity_In_P": "humidity_in_percent", "Влажность": "humidity_in_percent", "Влажность_%": "humidity_in_percent",
+        # Расширенные датчики «Цифрового улья 2.0»
         "CO2_ppm": "co2_ppm", "CO2": "co2_ppm", "Углекислый_газ": "co2_ppm",
         "Sound_dB": "sound_db", "sound_level_db": "sound_db", "Шум_дБ": "sound_db", "Уровень шума": "sound_db", "Шум": "sound_db",
         "Sound_Peak_Hz": "sound_peak_hz", "peak_freq_hz": "sound_peak_hz", "Частота_Гц": "sound_peak_hz", "Пик_частоты_Гц": "sound_peak_hz",
@@ -209,6 +233,7 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
         "Tilt_Alert": "tilt_alert", "Опрокидывание": "tilt_alert", "Сдвиг_улья": "tilt_alert", "Сдвиг": "tilt_alert",
         "Battery_P": "battery_percent", "Battery_Percent": "battery_percent", "Заряд_батареи": "battery_percent", "Батарея": "battery_percent",
         "Audio_File": "audio_file", "Аудиофайл": "audio_file", "Аудио": "audio_file",
+        # Слой пасеки, погоды и журнала учёта
         "Ext_Temp_C": "ext_temp_c", "Уличная_температура": "ext_temp_c",
         "Pesticide_Risk": "pesticide_risk", "Риск_пестицидов": "pesticide_risk",
         "Health_Index": "health_index", "Индекс_счастья": "health_index", "Индекс_здоровья": "health_index",
@@ -246,6 +271,7 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     if df["weight_kg"].isna().all() or df["temp_in_c"].isna().all():
         raise ValueError("Столбцы веса или температуры не содержат числовых значений.")
 
+    # Мягкая числовая нормализация опциональных колонок ПАК 2.0 и журнала учёта
     for opt_num in [
         "co2_ppm", "ext_temp_c", "health_index", "queen_age_months", "varroa_mite_index",
         "sound_db", "sound_peak_hz", "sound_swarm_band_ratio", "battery_percent"
@@ -262,12 +288,14 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     if "audio_file" in df.columns:
         df["audio_file"] = df["audio_file"].where(df["audio_file"].notna(), None)
 
+    # Нормализация ID ульев
     raw_ids = df["hive_id"].astype(str).str.strip()
     if raw_ids.str.fullmatch(r"\d+").all():
         df["hive_id"] = raw_ids.apply(lambda x: f"Улей №{x}")
     else:
         df["hive_id"] = raw_ids
 
+    # Группировка по пасекам
     if "apiary_name" not in df.columns:
         if "apiary_id" in df.columns:
             df["apiary_name"] = df["apiary_id"].apply(lambda x: f"Пасека №{x}")
@@ -283,6 +311,7 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     else:
         df["apiary_name"] = df["apiary_name"].fillna("Основная пасека").astype(str)
 
+    # Координаты пасеки (отличаем пустоту от текстового мусора)
     if "latitude" in df.columns and "longitude" in df.columns:
         df["_raw_has_coords"] = df["latitude"].notna() | df["longitude"].notna()
         df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
@@ -307,7 +336,12 @@ def normalize_uploaded_file(file_bytes: bytes, file_name: str) -> pd.DataFrame:
 
     return df
 
+
+# ---------------------------------------------------------
+# 3. АНАЛИТИЧЕСКОЕ ЯДРО (ТЕЛЕМЕТРИЯ + АКУСТИКА + ОХРАНА)
+# ---------------------------------------------------------
 def _format_happiness_index(health_idx: Optional[float]) -> tuple[Optional[str], Optional[str]]:
+    """Возвращает форматированное значение и статус индекса счастья (только про благополучие семьи)."""
     if health_idx is None:
         return None, None
     val = float(health_idx)
@@ -324,7 +358,9 @@ def _format_happiness_index(health_idx: Optional[float]) -> tuple[Optional[str],
         status_str = "Критическое состояние"
     return display_str, status_str
 
+
 def _render_badges_html(badges: list[str]) -> str:
+    """Формирует HTML-разметку строки бейджей контекста и цитирования базы знаний без обрезки."""
     parts = []
     for b in badges:
         is_kb = b.startswith("📚") or b.startswith("📖")
@@ -332,7 +368,9 @@ def _render_badges_html(badges: list[str]) -> str:
         parts.append(f'<span class="{cls}">{b}</span>')
     return f'<div class="context-badges-row">{"".join(parts)}</div>'
 
+
 def _compact_acoustics_for_payload(acoustic_obj: Optional[dict]) -> Optional[dict]:
+    """Удаляет длинные массивы спектра графика перед передачей контекста в ИИ."""
     if not acoustic_obj:
         return None
     return {
@@ -340,11 +378,19 @@ def _compact_acoustics_for_payload(acoustic_obj: Optional[dict]) -> Optional[dic
         if k not in ("spectrum_freqs_hz", "spectrum_rel_db")
     }
 
+
 def analyze_hive_telemetry(
     df: pd.DataFrame,
     hive_id: str,
     uploaded_audio: Optional[dict] = None,
 ) -> dict:
+    """
+    Локальный детерминированный анализ показаний датчиков улья:
+    - Проверка физической достоверности показаний (температура, влажность, вес, CO₂)
+    - Фильтрация ложных тревог (ночное выпаривание влаги; охлаждение при открытой крышке)
+    - Мультимодальная оценка рисков: роение, перегрев, пестициды, Varroa, акустика (0..1400 Гц),
+      охранные события корпуса (опрокидывание, открытие крышки) и заряд батареи.
+    """
     df_hive = df[df["hive_id"] == hive_id].sort_values("timestamp").copy()
     if df_hive.empty:
         return {"status": "error", "hive_id": str(hive_id), "message": f"Нет данных по улью {hive_id}"}
@@ -365,6 +411,7 @@ def analyze_hive_telemetry(
     health_idx = float(last["health_index"]) if pd.notna(last.get("health_index")) else None
     happiness_display, happiness_status = _format_happiness_index(health_idx)
 
+    # Новые опциональные поля ПАК «Цифровой улей 2.0»
     sound_db_tab = float(last["sound_db"]) if pd.notna(last.get("sound_db")) else None
     sound_peak_tab = float(last["sound_peak_hz"]) if pd.notna(last.get("sound_peak_hz")) else None
     sound_swarm_tab = float(last["sound_swarm_band_ratio"]) if pd.notna(last.get("sound_swarm_band_ratio")) else None
@@ -380,6 +427,7 @@ def analyze_hive_telemetry(
     else:
         acoustics = audio_analysis.evaluate_table_acoustics(sound_db_tab, sound_peak_tab, sound_swarm_tab)
 
+    # --- ШАГ 1: Проверка достоверности основных датчиков ---
     sensor_anomalies = []
     if not (SENSOR_LIMITS["temp_min"] <= cur_temp <= SENSOR_LIMITS["temp_max"]):
         sensor_anomalies.append(
@@ -398,6 +446,7 @@ def analyze_hive_telemetry(
             f"Уровень CO₂ ({cur_co2} ppm) выходит за допустимые пределы ({SENSOR_LIMITS['co2_min']}..{SENSOR_LIMITS['co2_max']} ppm)."
         )
 
+    # --- ШАГ 2: Расчёт эталона здорового ядра пасеки ---
     if mode == "hourly":
         total_delta = round(cur_weight - float(first["weight_kg"]), 2)
         daytime_mask = df_hive["hours_elapsed"] <= 3.0
@@ -438,6 +487,7 @@ def analyze_hive_telemetry(
         )
         period_label = "за 3 дн."
 
+    # Расчёт эталонного CO₂ по здоровым семьям пасеки (адаптируется и к учебным ~500 ppm, и к реальным ~2000 ppm)
     benchmark_co2 = None
     if cur_co2 is not None and "co2_ppm" in df.columns:
         hive_co2 = df.groupby("hive_id").agg(
@@ -490,6 +540,7 @@ def analyze_hive_telemetry(
         "audio_file_ref": audio_file_ref,
     }
 
+    # --- ШАГ 3: Блокировка опасных рекомендаций при реальном сбое датчика ---
     if sensor_anomalies:
         return {
             "status": "sensor_fault",
@@ -547,6 +598,7 @@ def analyze_hive_telemetry(
             "calculated_urgency": "Высокая (проверка датчиков и очный осмотр)"
         }
 
+    # --- ШАГ 4: Диагностика рисков, акустическая верификация и охранные события ---
     swarm_prob = 0
     heat_prob = 0
     pest_prob = 0
@@ -621,6 +673,7 @@ def analyze_hive_telemetry(
         swarm_prob += 20
         triggers.append(f"Возраст матки {queen_age} мес. (старше 24 мес. — повышенная склонность к роению).")
 
+    # Мультимодальное подкрепление по акустике (0..1400 Гц)
     acoustic_stress = False
     if acoustics is not None:
         a_status = acoustics.get("status")
@@ -647,6 +700,7 @@ def analyze_hive_telemetry(
         missing_warnings.append("Нет данных о возрасте матки и числе рамок расплода.")
 
     # При подтверждённой угрозе пестицидов рост T/влажности/CO₂ вызван ослаблением вентиляции,
+    # а не подготовкой к роению — демпфируем вероятность роения, чтобы не вводить пчеловода в заблуждение
     if pest_prob >= 60:
         swarm_prob = int(round(swarm_prob * 0.35))
 
@@ -801,11 +855,16 @@ def analyze_hive_telemetry(
         "calculated_urgency": urgency
     }
 
+
 def summarize_all_hives(
     df: pd.DataFrame,
     apiary_filter: str = None,
     hive_audio_results: Optional[dict] = None,
 ) -> dict:
+    """
+    Формирует полную отсортированную сводку по ульям (от критических к здоровым)
+    с учётом акустики, охранных датчиков, дневной/ночной динамики веса и области фильтрации.
+    """
     if df.empty:
         return {
             "apiary_filter": apiary_filter or "Все пасеки",
@@ -879,6 +938,7 @@ def summarize_all_hives(
                 "missing_data_warnings": info.get("missing_data_warnings", [])
             })
 
+    # Сортировка по срочности: сбой -> опрокидывание -> пестициды -> перегрев/роение -> стресс/крышка/Varroa -> норма
     summaries.sort(
         key=lambda h: (
             1 if h["sensor_fault_p"] == 100 else 0,
@@ -934,7 +994,14 @@ def summarize_all_hives(
         "hives": summaries
     }
 
+
 def extract_apiary_coords_status(df: pd.DataFrame, apiary_name: Optional[str]) -> dict:
+    """
+    Строго для выбранной пасеки проверяет координаты в загруженной таблице:
+    - status == 'ok': найдены валидные координаты именно для этой пасеки;
+    - status == 'missing': столбцы координат отсутствуют или пустые для этой пасеки;
+    - status == 'invalid': в таблице указаны некорректные/битые координаты.
+    """
     if df is None or df.empty or "latitude" not in df.columns or "longitude" not in df.columns:
         return {"status": "missing", "lat": None, "lon": None, "warning": ""}
 
@@ -967,7 +1034,9 @@ def extract_apiary_coords_status(df: pd.DataFrame, apiary_name: Optional[str]) -
 
     return {"status": "ok", "lat": round(lat, 4), "lon": round(lon, 4), "warning": ""}
 
+
 def check_apiary_sensor_anomalies(df: pd.DataFrame, apiary_name: Optional[str]) -> list[str]:
+    """Проверяет выбранную пасеку на аппаратные сбои датчиков (температура, влажность, вес, CO₂)."""
     anomalies = []
     if df is None or df.empty:
         return anomalies
@@ -1002,11 +1071,16 @@ def check_apiary_sensor_anomalies(df: pd.DataFrame, apiary_name: Optional[str]) 
 
     return anomalies
 
+
+# ---------------------------------------------------------
+# 4. ЕДИНАЯ СИСТЕМА ОПРЕДЕЛЕНИЯ ЛОКАЦИИ (ГОРОД <-> КООРДИНАТЫ)
+# ---------------------------------------------------------
 def resolve_unified_location_state(
     context_key: str,
     selected_apiary: Optional[str],
     file_coords_info: dict,
 ) -> dict:
+    """Унифицированный контроллер локации базовой пасеки (город <-> точные координаты)."""
     file_has_ok = (file_coords_info["status"] == "ok")
     reset_requested = st.session_state.pop("loc_reset_to_file", False)
     context_changed = (st.session_state.get("loc_context_key") != context_key)
@@ -1178,12 +1252,23 @@ def resolve_unified_location_state(
     st.session_state["loc_resolved"] = err_res
     return err_res
 
+
+# ---------------------------------------------------------
+# 5. ПОГОДА И МЕДОСБОР (СЕЗОННАЯ СИНХРОНИЗАЦИЯ + ВЛАЖНОСТЬ)
+# ---------------------------------------------------------
 @st.cache_data(ttl=1800)
 def fetch_region_weather(
     lat: float = 54.832,
     lon: float = 56.415,
     reference_date_str: str = ""
 ) -> pd.DataFrame:
+    """
+    7-дневная метеосводка (температура, влажность воздуха, ветер, осадки):
+    - для актуальных дат использует онлайн-прогноз Open-Meteo Forecast API;
+    - для архивных/сезонных дат таблицы использует реальный исторический метеоархив ERA5
+      (Open-Meteo Archive API) за те же даты сезона;
+    - резервный профиль используется только при полном отсутствии сети.
+    """
     use_historical_archive = False
     ref_date = None
     if reference_date_str:
@@ -1300,6 +1385,7 @@ def build_weather_json_for_ai(
     base_lat: Optional[float] = None,
     base_lon: Optional[float] = None,
 ) -> dict:
+    """Формирует структурированный прогноз погоды для помощника."""
     if base_lat is not None and base_lon is not None and migration_live.is_valid_coords(base_lat, base_lon):
         base = migration_live.build_base_from_coords(place_name, base_lat, base_lon)
     else:
@@ -1336,6 +1422,10 @@ def build_weather_json_for_ai(
         ]].to_dict(orient="records")
     }
 
+
+# ---------------------------------------------------------
+# 6. СХЕМА ИНСТРУМЕНТОВ ПОМОЩНИКА И СТРИМИНГ
+# ---------------------------------------------------------
 AGENT_TOOLS_SCHEMA = [
     {
         "type": "function",
@@ -1431,11 +1521,13 @@ KB_CLIENT_TOOL_SCHEMA = {
     "function": {
         "name": "search_beekeeping_knowledge",
         "description": (
-            "ОБЯЗАТЕЛЬНЫЙ поиск по подключённой справочной и нормативной базе знаний пчеловода (ФЗ № 490-ФЗ, ст. 16, "
-            "ФГИС «Сатурн», классы опасности пестицидов и сроки изоляции, нормы микроклимата и индекса счастья, ночная усушка, "
-            "протоколы противороевых работ, биоакустика 0–1400 Гц и пение матки, биотехническая борьба с Varroa, "
-            "ветеринарные ограничения, погодные пороги осмотров и правила кочёвки). Вызывай каждый раз при вопросах о нормах, "
-            "правилах, законах, методиках или объяснении явлений пчеловодства; не вызывай только на короткие приветствия/благодарности."
+            "ОБЯЗАТЕЛЬНЫЙ поиск по подключённой справочной и нормативной базе знаний пчеловода (ФЗ № 490-ФЗ в ред. от 15.12.2025; "
+            "Приказ Минсельхоза № 645 ветправила содержания пчёл: расстояния 100 м / 3 м / забор 2 м, поилки 0,05% соли и 500 м, "
+            "режим зимовника 0–4 °C и 70–85%, корма на зиму ≥2 кг/рамку, дезинфекция, карантин 30 дней и 5 км; "
+            "ГОСТ 19792-2017 на натуральный мёд; ГОСТ 25629-2014 термины и возбудители болезней; "
+            "монография Т. Сили о биологии роения, перваках/втораках, сигналах worker piping / buzz-run / toot-quack, "
+            "роевых ловушках 40 л, кворуме разведчиц, зимовке и терморегуляции; нормы микроклимата, акустика 0–1400 Гц, Varroa и кочёвка). "
+            "Вызывай каждый раз при вопросах о нормах, законах, ветправилах, ГОСТах, зимовке, ловушках, роении, мёде или болезнях пчёл."
         ),
         "parameters": {
             "type": "object",
@@ -1451,12 +1543,14 @@ KB_CLIENT_TOOL_SCHEMA = {
     }
 }
 
+
 def build_active_agent_tools(
     kb_ids: list[str],
     kb_mode: str = "api",
     kb_max_results: int = 4,
     kb_rerank: Optional[bool] = None,
 ) -> list[dict]:
+    """Собирает итоговый список инструментов для LLM с учётом подключённой Базы знаний AITUNNEL."""
     tools = list(AGENT_TOOLS_SCHEMA)
     clean_kb_ids = kb_aitunnel.parse_kb_ids(kb_ids)
     if not clean_kb_ids:
@@ -1475,14 +1569,19 @@ def build_active_agent_tools(
         tools.append(KB_CLIENT_TOOL_SCHEMA)
     return tools
 
+
 _KB_TOPIC_RE = re.compile(
-    r"(490|фз|закон|стать[яеи]|сатурн|пестицид|химобработ|опрыскиван|изоляц|класс\w*\s+опасност|"
-    r"варроа|varroa|клещ|антибиотик|препарат|лекарств|лечен|ветеринар|сббж|гнил|аскосфероз|нозематоз|"
-    r"роени|противороев|маточник|отводок|пение\s+матк|поёт\s+матк|акустик|частот|спектр|\bгц\b|"
+    r"(490|480|645|фз|приказ|гост|19792|25629|закон|стать[яеи]|сатурн|пестицид|химобработ|опрыскиван|изоляц|класс\w*\s+опасност|"
+    r"варроа|варрооз|varroa|клещ|антибиотик|препарат|лекарств|лечен|ветеринар|ветпаспорт|ветправил|сббж|гнил|аскосфероз|аспергилл|нозематоз|акарапидоз|тропилелапсоз|мешотчат|"
+    r"диастаз|гмф|пролин|сахароз|фруктоз|глюкоз|электропроводност|кислотност|зрел\w*\s+м[её]д|падев|сотов\w*\s+м[её]д|брожени|хранени\w*\s+м[её]д|нагрев\w*\s+м[её]д|пастеризац|маркировк|фальсифик|"
+    r"зимов\w*|омшаник|на\s+зиму|клуб\w*|корм(?:а|ов|у|ом)?\b|поилк|подсолен|забор|сосед\w*\s+участ|расстояни|лэп|карантин|дезинфекц|дератизац|дезинсекц|меркурий|всд|"
+    r"племенн\w*|25\s*км|напрыск|выкучиван|запариван|сл[её]т|трутовк|нуклеус|бонитировк|термин|определени|что\s+такое|"
+    r"роени|роев\w*|рой|первак|вторак|ловушк|разведчиц|кворум|сили|seeley|виляющ|танец|танц|насонов|piping|buzz|toot|quack|"
+    r"противороев|маточник|отводок|пение\s+матк|поёт\s+матк|акустик|частот|спектр|\bгц\b|"
     r"усушк|выпариван|микроклимат|норм[аеыу]|порог|температур\w*\s+осмотр|при\s+какой\s+температур|"
     r"кочёв|кочев|перевоз|летк[иао]|кочев\w*\s+сетк|хопкинс|медонос|индекс\w*\s+счасть|благополуч|"
     r"сбой\s+датчик|крышк|опрокидыван|правил|протокол|регламент|инструкц|как\s+защит|как\s+бороться|"
-    r"что\s+делать|сколько\s+(?:дней|суток|часов)|за\s+сколько|почему\s+(?:падает|снижа|раст|гуд))",
+    r"что\s+делать|сколько\s+(?:дней|суток|часов|кг|метр|литр)|за\s+сколько|почему\s+(?:падает|снижа|раст|гуд))",
     flags=re.IGNORECASE,
 )
 
@@ -1491,13 +1590,17 @@ _CHITCHAT_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+
 def _should_consult_kb(user_query: str) -> bool:
+    """Определяет, относится ли запрос пользователя к темам подключённой базы знаний."""
     q = (user_query or "").strip()
     if not q or _CHITCHAT_RE.match(q):
         return False
     return bool(_KB_TOPIC_RE.search(q))
 
+
 def stream_text_chunks(text: str):
+    """Генератор плавного потокового вывода текста в чат с сохранением переносов строк Markdown."""
     tokens = re.split(r"(\s+)", text)
     for tok in tokens:
         if tok:
@@ -1505,7 +1608,9 @@ def stream_text_chunks(text: str):
             if not tok.isspace():
                 time.sleep(0.012)
 
+
 def resolve_fuzzy_hive_ids(raw_candidates: list, available_hives: list) -> list:
+    """Сопоставляет свободные или неточные названия ульев с реальными ID в датасете."""
     resolved = []
     avail_map = {h.lower(): h for h in available_hives}
     for item in raw_candidates:
@@ -1523,6 +1628,7 @@ def resolve_fuzzy_hive_ids(raw_candidates: list, available_hives: list) -> list:
                     resolved.append(h)
     return resolved
 
+
 def execute_agent_tool(
     tool_name: str,
     tool_args: dict,
@@ -1537,6 +1643,7 @@ def execute_agent_tool(
     kb_ids: Optional[list[str]] = None,
     kb_rerank: Optional[bool] = None,
 ) -> tuple[dict, list[str]]:
+    """Исполняет запрошенный помощником инструмент и возвращает (result_dict, badge_labels)."""
     available_hives = list(df_active["hive_id"].unique()) if not df_active.empty else []
     active_place = loc_state.get("name") or "Уфа"
     active_lat = loc_state.get("latitude") if loc_state.get("status") == "ok" else None
@@ -1680,6 +1787,10 @@ def execute_agent_tool(
 
     return {"error": f"Неизвестный инструмент: {tool_name}"}, ["⚠️ Ошибка запроса"]
 
+
+# ---------------------------------------------------------
+# 7. ОНЛАЙН-ПОМОЩНИК
+# ---------------------------------------------------------
 def query_llm_agent(
     df_active: pd.DataFrame,
     selected_apiary: Optional[str],
@@ -1696,6 +1807,10 @@ def query_llm_agent(
     kb_mode: Optional[str] = None,
     kb_rerank: Optional[bool] = None,
 ) -> tuple[str, list]:
+    """
+    Обрабатывает запрос пчеловода через нейросеть с вызовом инструментов.
+    Возвращает: (reply_text, context_badges).
+    """
     connection_error_msg = (
         "⚠️ Не удалось подключиться к помощнику. "
         "Проверьте подключение к интернету и попробуйте снова."
@@ -1881,6 +1996,8 @@ def query_llm_agent(
                 continue
 
             # Страховка: если база знаний подключена в режиме "api", вопрос касается тем БЗ,
+            # но модель ответила по памяти без вызова инструмента — подтягиваем фрагменты БЗ,
+            # прикрепляем бейджи цитирования и перепроверяем ответ по реальным документам.
             if (
                 active_kb_ids
                 and active_kb_mode == "api"
@@ -1966,7 +2083,15 @@ def query_llm_agent(
         print(f"[Assistant error] {type(e).__name__}: {e}")
         return connection_error_msg, context_badges + ["⚠️ Нет связи"]
 
+
+# ---------------------------------------------------------
+# 8. ЗАГРУЗОЧНЫЙ ЭКРАН ПРИ СТАРТЕ И ЗАГРУЗКА ТАБЛИЦЫ
+# ---------------------------------------------------------
 def process_and_store_dataset(file_bytes: bytes, file_name: str, file_sig: str) -> None:
+    """
+    Парсит и подготавливает новый файл телеметрии (используется и на стартовом экране,
+    и при прямой замене файла из боковой панели без возврата в меню).
+    """
     st.write("📄 Чтение таблицы и проверка обязательных столбцов...")
     df_parsed = normalize_uploaded_file(file_bytes, file_name)
 
@@ -2025,6 +2150,8 @@ def process_and_store_dataset(file_bytes: bytes, file_name: str, file_sig: str) 
     st.session_state.pop("global_chat", None)
     st.session_state.pop("chat_dataset_signature", None)
 
+
+# Этап 1: Краткий загрузочный экран при первом открытии приложения
 if not st.session_state.get("app_booted"):
     boot_slot = st.empty()
     with boot_slot.container():
@@ -2047,6 +2174,7 @@ if not st.session_state.get("app_booted"):
 st.sidebar.title("🐝 Цифровой улей")
 st.sidebar.caption("Система поддержки принятия решений пчеловода")
 
+# Если файл ещё не загружен — чистый экран загрузки
 if not st.session_state.get("loaded_dataset_sig"):
     st.sidebar.info("Загрузите таблицу показаний на основном экране, чтобы открыть аналитику и помощника.")
 
@@ -2098,6 +2226,10 @@ if not st.session_state.get("loaded_dataset_sig"):
 
     st.stop()
 
+
+# ---------------------------------------------------------
+# 9. РАБОЧИЙ ИНТЕРФЕЙС (ПОСЛЕ ЗАГРУЗКИ ТАБЛИЦЫ)
+# ---------------------------------------------------------
 uploaded_file_name = st.session_state["uploaded_file_name"]
 dataset_signature = st.session_state["loaded_dataset_sig"]
 df_active = normalize_uploaded_file(st.session_state["uploaded_file_bytes"], uploaded_file_name)
@@ -2112,6 +2244,7 @@ hive_audio_raw = st.session_state["hive_audio_raw"]
 
 st.sidebar.success(f"📄 **{uploaded_file_name}**")
 
+# Прямой выбор нового файла без возврата в стартовое меню (при ошибке текущие данные сохраняются)
 uploader_ver = st.session_state.get("sidebar_uploader_ver", 0)
 new_uploaded = st.sidebar.file_uploader(
     "📂 Выбрать другой файл (Excel / CSV):",
@@ -2201,6 +2334,9 @@ tab_monitor, tab_weather, tab_migration = st.tabs([
     "🚚 Кочёвка пасеки"
 ])
 
+# =========================================================
+# ВКЛАДКА 1: СОСТОЯНИЕ УЛЬЕВ + АКУСТИКА (0..1400 ГЦ)
+# =========================================================
 with tab_monitor:
     ctx = analyze_hive_telemetry(
         df_active,
@@ -2243,6 +2379,7 @@ with tab_monitor:
             else:
                 st.success(f"✅ **{ctx['primary_diagnosis']}** — {ctx['calculated_urgency']}")
 
+            # Компактные охранные и сервисные уведомления (показываются только при наличии событий)
             sec_notes = []
             if sec.get("lid_open"):
                 sec_notes.append("🔓 Зафиксировано открытие крышки улья")
@@ -2363,6 +2500,7 @@ with tab_monitor:
                 )
                 st.plotly_chart(fig2, use_container_width=True)
 
+        # --- БЛОК АКУСТИЧЕСКОГО МОНИТОРИНГА (0..1400 ГЦ) ---
         with st.container(border=True):
             st.markdown(f"#### 🎙️ Акустический мониторинг: {selected_hive} (0–1400 Гц)")
             au_c1, au_c2 = st.columns([3, 1])
@@ -2554,6 +2692,9 @@ with tab_monitor:
                     "система построит спектр 0–1400 Гц и учтёт звук в оценке риска роения и в ответах помощника."
                 )
 
+# =========================================================
+# ВКЛАДКА 2: ПОГОДА И МЕДОСБОР
+# =========================================================
 with tab_weather:
     st.subheader("🌦️ Прогноз погоды и условий для лёта пчёл")
     if loc_state["status"] != "ok":
@@ -2636,6 +2777,9 @@ with tab_weather:
             f"- **Срочность:** **Плановая**."
         )
 
+# =========================================================
+# ВКЛАДКА 3: КОЧЁВКА ПАСЕКИ (УНИФИЦИРОВАННЫЙ ВВОД ГОРОДА И КООРДИНАТ)
+# =========================================================
 with tab_migration:
     st.subheader("🚚 Радар кочёвки")
     st.caption(
@@ -2790,6 +2934,7 @@ with tab_migration:
                     delta_color="off"
                 )
 
+                # Компактные русскоязычные подсказки при наведении на метки карты (без техпеременных)
                 def _short_pest_hover(row) -> str:
                     pct = int(round(row["pesticide_exposure_index"] * 100))
                     cls = int(row["saturn_hazard_class"])
@@ -2991,6 +3136,10 @@ with tab_migration:
                     hide_index=True,
                 )
 
+
+# ---------------------------------------------------------
+# 10. ЧАТ-ПОМОЩНИК (ДОСТУПЕН НА ВСЕХ ВКЛАДКАХ)
+# ---------------------------------------------------------
 active_ctx_label = f"{selected_hive} ({selected_apiary})"
 active_region_label = loc_state["name"] if loc_state.get("status") == "ok" else "не задан"
 

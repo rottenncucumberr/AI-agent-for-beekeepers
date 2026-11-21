@@ -7,14 +7,21 @@ from typing import Optional
 
 USER_AGENT = "DigitalHiveAgent/2.0"
 
+# Короткие полные названия стандартных справочных документов проекта (без обрезки)
 KNOWN_DOC_TITLES = {
     "01_fz490_pesticides_protocol.md": "ФЗ № 490-ФЗ и пестициды",
     "02_swarming_microclimate_acoustics.md": "Микроклимат, роение и акустика",
     "03_migration_and_weather_rules.md": "Погода, осмотры и кочёвка",
     "04_varroa_biosecurity_and_limits.md": "Varroa и ветправила",
+    "05_gost_19792_2017_natural_honey.md": "ГОСТ 19792-2017: мёд натуральный",
+    "06_gost_25629_2014_beekeeping_terms.md": "ГОСТ 25629-2014: термины пчеловодства",
+    "07_vet_rules_prikaz_645.md": "Приказ № 645: ветправила содержания",
+    "08_seeley_swarming_colony_biology.md": "Т. Сили: биология роения и гнезда",
 }
 
+
 def parse_kb_ids(raw_value) -> list[str]:
+    """Нормализует список ID баз знаний AITUNNEL (kb_...) из строки или списка."""
     if not raw_value:
         return []
     if isinstance(raw_value, str):
@@ -29,12 +36,17 @@ def parse_kb_ids(raw_value) -> list[str]:
             seen.append(it)
     return seen[:5]
 
+
 def build_server_file_search_tool(
     kb_ids: list[str],
     max_results: int = 4,
     rerank: Optional[bool] = None,
     max_uses: int = 2,
 ) -> Optional[dict]:
+    """
+    Формирует серверный инструмент `aitunnel:file_search` для передачи в `tools`
+    запроса `/chat/completions` (согласно документации AITUNNEL).
+    """
     clean_ids = parse_kb_ids(kb_ids)
     if not clean_ids:
         return None
@@ -50,19 +62,28 @@ def build_server_file_search_tool(
         "parameters": params,
     }
 
+
 def _extract_heading_from_excerpt(path: str, excerpt: str) -> str:
+    """
+    Извлекает заголовок раздела из текста фрагмента AITUNNEL.
+    AITUNNEL обычно предваряет фрагмент строкой вида:
+    `path/to/file.md — Заголовок > Подзаголовок`.
+    """
     if not excerpt:
         return ""
     first_line = excerpt.strip().splitlines()[0].strip()
+    # Вариант 1: формат AITUNNEL "path — Заголовок > Подзаголовок"
     if " — " in first_line:
         heading_part = first_line.split(" — ", 1)[1].strip()
         if ">" in heading_part:
             heading_part = heading_part.split(">")[-1].strip()
         return heading_part[:60]
+    # Вариант 2: Markdown-заголовок "# ..." или "## ..."
     m = re.match(r"^#{1,4}\s+(.+)$", first_line)
     if m:
         return m.group(1).strip()[:60]
     return ""
+
 
 def _humanize_doc_name(path: str) -> str:
     base = os.path.basename(str(path or "").strip())
@@ -75,7 +96,12 @@ def _humanize_doc_name(path: str) -> str:
     stem = stem.replace("_", " ").replace("-", " ").strip()
     return stem if stem else base
 
+
 def format_citation_badges(kb_res: dict, max_sources: int = 4) -> list[str]:
+    """
+    Формирует компактные полные бейджи цитирования без обрезки многоточием и без дублей:
+    первый бейдж — счётчик найденных фрагментов, далее — по одному бейджу на каждый уникальный документ.
+    """
     if not kb_res or kb_res.get("status") != "ok":
         return []
     fragments = kb_res.get("fragments") or []
@@ -97,6 +123,7 @@ def format_citation_badges(kb_res: dict, max_sources: int = 4) -> list[str]:
             break
     return badges
 
+
 def search_single_knowledge_base(
     kb_id: str,
     query: str | list[str],
@@ -106,6 +133,10 @@ def search_single_knowledge_base(
     rerank: Optional[bool] = None,
     timeout: float = 10.0,
 ) -> dict:
+    """
+    Выполняет поиск фрагментов в одной базе знаний AITUNNEL методом
+    POST /v1/knowledge-bases/{id}/search (без сторонних зависимостей, через urllib).
+    """
     if not api_key:
         return {"status": "error", "error_type": "no_api_key", "message": "Не задан API-ключ AITUNNEL.", "results": []}
     if not kb_id or not str(kb_id).strip():
@@ -187,6 +218,7 @@ def search_single_knowledge_base(
             "results": [],
         }
 
+
 def search_knowledge_bases(
     kb_ids: list[str],
     queries: str | list[str],
@@ -197,6 +229,10 @@ def search_knowledge_bases(
     min_score: float = 0.15,
     timeout: float = 10.0,
 ) -> dict:
+    """
+    Ищет релевантные фрагменты по одной или нескольким (до 5) базам знаний AITUNNEL,
+    объединяет, удаляет дубли и возвращает компактный JSON-ответ для передачи в LLM.
+    """
     clean_ids = parse_kb_ids(kb_ids)
     if not clean_ids:
         return {
@@ -234,6 +270,7 @@ def search_knowledge_bases(
             "fragments": [],
         }
 
+    # Дедупликация и сортировка по убыванию score
     all_hits.sort(key=lambda h: h.get("score", 0.0), reverse=True)
     dedup = []
     seen_keys = set()
